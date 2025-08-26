@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CAB432 API Tester</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <h1>CAB432 API Testing Interface</h1>
+        
+        {% if error %}
+        <div class="error">{{ error }}</div>
+        {% endif %}
+        
+        {% if not current_user %}
+        <div class="login-form">
+            <h2>Login</h2>
+            <form action="/web/login" method="post">
+                <input type="text" name="username" placeholder="Username" required>
+                <input type="password" name="password" placeholder="Password" required>
+                <button type="submit">Login</button>
+            </form>
+            <div class="demo-accounts">
+                <p><strong>Demo Accounts:</strong></p>
+                <p>user1 / password1</p>
+                <p>admin1 / adminpass</p>
+            </div>
+        </div>
+        {% else %}
+        <div class="user-info">
+            <p>Logged in as: <strong>{{ current_user }}</strong></p>
+            <a href="/web/logout" class="logout-btn">Logout</a>
+        </div>
+        
+        <div class="api-tester">
+            <h2>API Endpoint Tester</h2>
+            
+            <div class="endpoint">
+                <h3>1. Test Root Endpoint</h3>
+                <button onclick="testEndpoint('/api/', 'GET')">Test /api/</button>
+                <div class="result" id="result-root"></div>
+            </div>
+            
+            <div class="endpoint">
+                <h3>2. Test Protected Endpoint</h3>
+                <button onclick="testEndpoint('/api/protected', 'GET')">Test /api/protected</button>
+                <div class="result" id="result-protected"></div>
+            </div>
+            
+            <div class="endpoint">
+                <h3>3. Test Process Endpoint</h3>
+                <button onclick="testEndpoint('/api/process', 'POST')">Test /api/process</button>
+                <div class="result" id="result-process"></div>
+            </div>
+            
+            <div class="endpoint">
+                <h3>4. Test Image Filtering</h3>
+                <form id="imageForm" enctype="multipart/form-data">
+                    <input type="file" id="imageInput" name="image" accept="image/*" required>
+                    <select id="filterSelect" name="filter">
+                        <option value="BLUR">Blur</option>
+                        <option value="CONTOUR">Contour</option>
+                        <option value="DETAIL">Detail</option>
+                        <option value="EDGE_ENHANCE">Edge Enhance</option>
+                        <option value="EMBOSS">Emboss</option>
+                        <option value="SHARPEN">Sharpen</option>
+                        <option value="SMOOTH">Smooth</option>
+                    </select>
+                    <button type="button" onclick="testImageFilter()">Test Image Filter</button>
+                </form>
+                <div class="result" id="result-image">
+                    <div id="imagePreview"></div>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+
+    <script>
+        function testEndpoint(endpoint, method) {
+            const resultDiv = document.getElementById(`result-${endpoint.split('/')[2] || 'root'}`);
+            resultDiv.innerHTML = 'Testing...';
+            
+            const token = '{{ token }}';
+            const headers = {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            };
+            
+            fetch(endpoint, {
+                method: method,
+                headers: headers
+            })
+            .then(response => response.json())
+            .then(data => {
+                resultDiv.innerHTML = `<pre>${JSON.stringify(data, null, 2)}</pre>`;
+            })
+            .catch(error => {
+                resultDiv.innerHTML = `Error: ${error}`;
+            });
+        }
+        
+        function testImageFilter() {
+            const resultDiv = document.getElementById('result-image');
+            resultDiv.innerHTML = 'Testing...';
+            
+            const fileInput = document.getElementById('imageInput');
+            const filterSelect = document.getElementById('filterSelect');
+            
+            if (!fileInput.files || fileInput.files.length === 0) {
+                resultDiv.innerHTML = 'Please select an image file first.';
+                return;
+            }
+            
+            const formData = new FormData();
+            formData.append('image', fileInput.files[0]);
+            formData.append('filter', filterSelect.value);
+            
+            const token = '{{ token }}';
+            
+            fetch('/api/filter-image', {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                },
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.error) {
+                    resultDiv.innerHTML = `Error: ${data.error}`;
+                } else {
+                    // Render JSON + imagePreview container
+                    resultDiv.innerHTML = `
+                        <pre>${JSON.stringify(
+                            {message: data.message, user: data.user, filter: data.filter, image_id: data.image_id},
+                            null,
+                            2
+                        )}</pre>
+                        <div id="imagePreview"></div>
+                    `;
+                    
+                    const imagePreview = document.getElementById('imagePreview');
+                    
+                    if (data.image) {
+                        const imgContainer = document.createElement('div');
+
+                        const img = document.createElement('img');
+                        img.src = data.image;
+                        img.style.maxWidth = '100%';
+                        img.style.maxHeight = '300px';
+                        img.style.marginTop = '10px';
+                        img.style.border = '1px solid #ddd';
+                        img.style.borderRadius = '4px';
+                        imgContainer.appendChild(img);
+
+                        const downloadBtn = document.createElement('button');
+                        downloadBtn.textContent = 'Download Filtered Image';
+                        downloadBtn.style.marginTop = '10px';
+                        downloadBtn.onclick = function() {
+                            downloadFilteredImage(data.image_id);
+                        };
+                        imgContainer.appendChild(downloadBtn);
+
+                        imagePreview.appendChild(imgContainer);
+                    }
+                }
+            })
+            .catch(error => {
+                resultDiv.innerHTML = `Error: ${error}`;
+            });
+        }
+        
+        function downloadFilteredImage(imageId) {
+            const token = '{{ token }}';
+            
+            // Create a temporary link to trigger the download
+            const link = document.createElement('a');
+            link.href = `/api/download-image/${imageId}?token=${token}`;
+            link.download = 'filtered-image.jpg';
+            link.style.display = 'none';
+            
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+    </script>
+</body>
+</html>
